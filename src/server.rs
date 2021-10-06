@@ -1,45 +1,54 @@
 use std::fs;
 use std::io::{self, ErrorKind};
-use std::net::TcpListener;
+use std::net::{SocketAddr, TcpListener};
 use std::path::Path;
 use std::sync::Arc;
 use std::thread::Builder;
 
 use clap::ArgMatches;
 
-use crate::stream_handler;
-
-use super::DEFAULT_PORT;
+use super::stream_handler;
+use super::{DEFAULT_IP_ADDRESS, DEFAULT_PORT};
 
 const DEFAULT_OUTPUT_PATH: &str = ".";
 
 struct TrsferServerConfig<'a> {
     output_path: &'a Path,
+    ip: &'a str,
     port: u16,
     allow_port_fallback: bool,
 }
 
 pub fn run(matches: &ArgMatches<'_>) {
-    let port: u16;
-    let allow_port_fallback;
-
-    if matches.occurrences_of("port") > 0 {
+    let (port, allow_port_fallback) = if matches.occurrences_of("port") > 0 {
         let port_arg = matches.value_of("port").unwrap();
         if let Ok(port_arg) = port_arg.parse() {
-            port = port_arg;
-            allow_port_fallback = false;
+            (port_arg, false)
         } else {
             exit!(1, port_arg);
         }
     } else {
-        port = DEFAULT_PORT;
-        allow_port_fallback = true;
-    }
+        (DEFAULT_PORT, true)
+    };
+
+    let ip = if matches.occurrences_of("ip") > 0 {
+        matches.value_of("ip").unwrap()
+    } else {
+        DEFAULT_IP_ADDRESS
+    };
 
     let output_path = match matches.value_of("output") {
         Some(output_path_arg) => {
             let output_path = Path::new(output_path_arg);
-            if output_path.is_dir() {
+            if output_path.exists() && output_path.is_dir() {
+                output_path
+            } else if !output_path.exists() {
+                fs::create_dir(output_path).unwrap_or_else(|_| {
+                    panic!(
+                        "failed to create directory: `{}`",
+                        output_path.to_string_lossy()
+                    )
+                });
                 output_path
             } else {
                 exit!(7, output_path_arg);
@@ -48,20 +57,11 @@ pub fn run(matches: &ArgMatches<'_>) {
         None => Path::new(DEFAULT_OUTPUT_PATH),
     };
 
-    // prepare the output directory if not exists
-    if !output_path.exists() {
-        fs::create_dir(output_path).unwrap_or_else(|_| {
-            panic!(
-                "failed to create directory: `{}`",
-                output_path.to_string_lossy()
-            )
-        });
-    }
-
     log::info!("output directory: `{}`", output_path.to_string_lossy());
 
     let config = TrsferServerConfig {
         output_path,
+        ip,
         port,
         allow_port_fallback,
     };
@@ -71,7 +71,11 @@ pub fn run(matches: &ArgMatches<'_>) {
 
 fn run_server(mut config: TrsferServerConfig<'_>) -> io::Result<()> {
     let tcp_listener = loop {
-        let addr = format!("127.0.0.1:{}", config.port);
+        let addr_str = format!("{}:{}", config.ip, config.port);
+        let addr = match addr_str.parse::<SocketAddr>() {
+            Ok(addr) => addr,
+            Err(_) => exit!(6, addr_str),
+        };
         match TcpListener::bind(&addr) {
             Ok(listener) => {
                 log::info!("server is listening on `{}`", addr);

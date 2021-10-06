@@ -70,10 +70,12 @@ impl Worker {
             .spawn(move || {
                 let mut resource = resource;
                 loop {
-                    match receiver.lock().unwrap().recv().unwrap() {
-                        Message::Task(task) => task.run(&mut resource),
+                    // Explicitly drop the MutexGuard
+                    let task = match receiver.lock().unwrap().recv().unwrap() {
+                        Message::Task(task) => task,
                         Message::Terminate => break,
-                    }
+                    };
+                    task.run(&mut resource);
                 }
             })
             .unwrap();

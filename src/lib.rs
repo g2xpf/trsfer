@@ -21,6 +21,7 @@ pub use session::Session;
 pub use stream_handler::handle_stream;
 pub use thread_pool::ThreadPool;
 
+pub const DEFAULT_IP_ADDRESS: &str = "127.0.0.1";
 pub const DEFAULT_PORT: u16 = 8192;
 
 #[derive(Serialize, Deserialize, Debug)]

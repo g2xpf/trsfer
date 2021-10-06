@@ -5,7 +5,7 @@ use clap::{App, AppSettings, Arg, SubCommand};
 
 use env_logger::Builder;
 
-use trsfer::{client, server, DEFAULT_PORT};
+use trsfer::{client, server, DEFAULT_IP_ADDRESS, DEFAULT_PORT};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const AUTHOR: &str = env!("CARGO_PKG_AUTHORS");
@@ -48,6 +48,12 @@ fn main() {
         .subcommand(
             SubCommand::with_name("server")
                 .about("Launch a trsfer server")
+                .arg(
+                    Arg::from_usage(
+                        "[ip] -a, --ip-address=<ip> 'the ip address that the server listens on'",
+                    )
+                    .default_value(DEFAULT_IP_ADDRESS),
+                )
                 .arg(
                     Arg::from_usage(
                         "[port] -p, --port=<PORT> 'the port that the server listens on'",
