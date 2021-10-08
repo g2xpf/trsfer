@@ -160,6 +160,6 @@ mod file_entries {
 
 pub fn default_progress_style() -> ProgressStyle {
     ProgressStyle::default_bar()
-        .template("{msg} [{bar:.cyan/blue}] {bytes}/{total_bytes} ({eta})")
+        .template("{msg} [{bar:.cyan/blue}] {bytes}/{total_bytes} ({eta_precise})")
         .progress_chars("##-")
 }

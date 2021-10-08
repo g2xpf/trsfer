@@ -2,6 +2,7 @@ use std::io;
 use std::io::{Read, Write};
 
 use indicatif::ProgressBar;
+use serde::{Deserialize, Serialize};
 
 pub type ReadBytes = f32;
 
@@ -15,6 +16,28 @@ pub trait BinaryRead: Read {
         self.read_exact(&mut data_buf)?;
         buf.extend_from_slice(&data_buf);
         Ok(data_size)
+    }
+
+    fn read_deserialize<'a, T>(&mut self, buf: &'a mut Vec<u8>) -> io::Result<T>
+    where
+        T: Deserialize<'a>,
+    {
+        self.read_binary(buf)?;
+        let t = bincode::deserialize(buf).unwrap();
+        Ok(t)
+    }
+
+    fn read_deserialize_with_progress<'a, T>(
+        &mut self,
+        buf: &'a mut Vec<u8>,
+        progress_bar: &ProgressBar,
+    ) -> io::Result<T>
+    where
+        T: Deserialize<'a>,
+    {
+        self.read_binary_with_progress(buf, progress_bar)?;
+        let t = bincode::deserialize(buf).unwrap();
+        Ok(t)
     }
 
     fn read_with_progress(
@@ -67,6 +90,14 @@ pub trait BinaryWrite: Write {
         Ok(len)
     }
 
+    fn write_serialize<T>(&mut self, t: &T) -> io::Result<usize>
+    where
+        T: Serialize,
+    {
+        let buf = bincode::serialize(t).unwrap();
+        self.write_binary(&buf)
+    }
+
     fn write_with_progress(
         &mut self,
         buf: &[u8],
@@ -89,6 +120,18 @@ pub trait BinaryWrite: Write {
         assert_eq!(len, written);
 
         Ok(written)
+    }
+
+    fn write_serialize_with_progress<T>(
+        &mut self,
+        t: &T,
+        progress_bar: &ProgressBar,
+    ) -> io::Result<usize>
+    where
+        T: Serialize,
+    {
+        let buf = bincode::serialize(t).unwrap();
+        self.write_binary_with_progress(&buf, progress_bar)
     }
 
     fn write_binary_with_progress(

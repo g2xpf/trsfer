@@ -66,19 +66,26 @@ impl Session {
                 // set progress bar message
                 progress_bar.set_message(file_metadata.path_buf.to_string_lossy().into_owned());
 
-                // create raw data
-                let raw_setting = bincode::serialize(&setting).unwrap();
-                let raw_file_metadata = bincode::serialize(&file_metadata).unwrap();
-                let content = FileContent::load(&path, &progress_bar).unwrap();
-
                 // create read/write stream
                 let stream_cloned = stream.try_clone().unwrap();
                 let writer = stream;
                 let mut reader = stream_cloned;
 
                 // send request
-                writer.write_binary(&raw_setting).unwrap();
-                writer.write_binary(&raw_file_metadata).unwrap();
+                writer.write_serialize(&setting).unwrap();
+                writer.write_serialize(&file_metadata).unwrap();
+
+                let mut buf = Vec::new();
+                let file_exists = reader.read_deserialize::<bool>(&mut buf).unwrap();
+                if file_exists {
+                    progress_bar
+                        .finish_with_message(file_metadata.path_buf.to_string_lossy().to_string());
+                    return;
+                }
+
+                // create raw data
+                let content = FileContent::load(&path, &progress_bar).unwrap();
+
                 writer
                     .write_binary_with_progress(&content, &progress_bar)
                     .unwrap();

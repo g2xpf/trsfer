@@ -16,20 +16,23 @@ pub fn handle_stream(stream: TcpStream, output_path: Arc<PathBuf>) -> io::Result
     loop {
         // receive request
         let mut buf = Vec::new();
-        reader.read_binary(&mut buf)?;
-        let setting = bincode::deserialize::<TrsferSetting>(&buf).unwrap();
+        let setting = reader.read_deserialize::<TrsferSetting>(&mut buf)?;
 
         let mut buf = Vec::new();
-        reader.read_binary(&mut buf)?;
-        let file_metadata = bincode::deserialize::<FileMetadata>(&buf).unwrap();
+        let file_metadata = reader.read_deserialize::<FileMetadata>(&mut buf)?;
+
+        let save_path = output_path.join(&file_metadata.path_buf);
+
+        let exists_file = save_path.exists();
+        writer.write_serialize(&exists_file)?;
+        if exists_file {
+            continue;
+        }
 
         // set progress bar message
         let mut buf = Vec::new();
         reader.read_binary(&mut buf)?;
-
         let file_content = FileContent(buf);
-
-        let save_path = output_path.join(&file_metadata.path_buf);
 
         if !setting.is_dry_run {
             let save_path = save_path.clone();
