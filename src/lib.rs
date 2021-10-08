@@ -1,7 +1,10 @@
+use indicatif::{ProgressBar, ProgressStyle};
+use rw::BinaryRead;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
-use std::fs::File;
-use std::io::{self, Read};
+use std::fs::{self, File};
+use std::io::{self, Write};
+use std::ops::Deref;
 use std::path::{Path, PathBuf, StripPrefixError};
 
 #[macro_use]
@@ -25,31 +28,63 @@ pub const DEFAULT_IP_ADDRESS: &str = "127.0.0.1";
 pub const DEFAULT_PORT: u16 = 8192;
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct RawFileEntry {
-    pub is_dry_run: bool,
-    pub path_buf: PathBuf,
-    pub raw_data: Vec<u8>,
+pub struct TrsferSetting {
+    is_dry_run: bool,
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+pub struct FileMetadata {
+    pub path_buf: PathBuf,
+    pub file_size: u64,
+}
+
+#[repr(transparent)]
+pub struct FileContent(Vec<u8>);
+
+impl FileContent {
+    pub fn load(path: impl AsRef<Path>, progress_bar: &ProgressBar) -> Result<Self, Error> {
+        let mut file = File::open(path).map_err(Error::IOError)?;
+        let len = file.metadata().map_err(Error::IOError)?.len() as usize;
+
+        let mut buf = Vec::new();
+        file.read_with_progress(&mut buf, len, progress_bar)
+            .map_err(Error::IOError)?;
+        Ok(FileContent(buf))
+    }
+
+    pub fn save(&self, save_path: impl AsRef<Path>) -> Result<(), Error> {
+        let save_path = save_path.as_ref();
+        if let Some(parent_path) = save_path.parent() {
+            fs::create_dir_all(parent_path).map_err(Error::IOError)?;
+        }
+        let mut file = File::create(&save_path).map_err(Error::IOError)?;
+        file.write_all(&self.0).map_err(Error::IOError)
+    }
+}
+
+impl Deref for FileContent {
+    type Target = Vec<u8>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+#[derive(Debug)]
 pub enum Error {
     IOError(io::Error),
 }
 
-impl RawFileEntry {
+impl FileMetadata {
     pub fn load(path: impl AsRef<Path>) -> Result<Self, Error> {
         let path_buf = path.as_ref().to_owned();
-        let mut file = File::open(path).map_err(Error::IOError)?;
-        let mut raw_data = Vec::new();
-        file.read_to_end(&mut raw_data).map_err(Error::IOError)?;
-        Ok(RawFileEntry {
-            path_buf,
-            raw_data,
-            is_dry_run: false,
-        })
-    }
+        let file = File::open(path).map_err(Error::IOError)?;
+        let metadata = file.metadata().map_err(Error::IOError)?;
+        let file_size = metadata.len();
 
-    pub fn set_is_dry_run(&mut self, is_dry_run: bool) {
-        self.is_dry_run = is_dry_run;
+        Ok(FileMetadata {
+            path_buf,
+            file_size,
+        })
     }
 
     pub fn strip_prefix(&mut self, base: impl AsRef<Path>) -> Result<(), StripPrefixError> {
@@ -121,4 +156,10 @@ mod file_entries {
             }
         }
     }
+}
+
+pub fn default_progress_style() -> ProgressStyle {
+    ProgressStyle::default_bar()
+        .template("{msg} [{bar:.cyan/blue}] {bytes}/{total_bytes} ({eta})")
+        .progress_chars("##-")
 }

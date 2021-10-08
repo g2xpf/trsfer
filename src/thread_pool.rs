@@ -47,7 +47,6 @@ impl<T> Drop for ThreadPool<T> {
         for _ in &self._workers {
             self.sender.send(Message::Terminate).unwrap();
         }
-
         for mut worker in self._workers.drain(..) {
             if let Some(handle) = worker.handle.take() {
                 handle.join().unwrap();
@@ -61,14 +60,13 @@ struct Worker {
 }
 
 impl Worker {
-    fn new<T>(id: usize, resource: T, receiver: Arc<Mutex<Receiver<Message<T>>>>) -> Self
+    fn new<T>(id: usize, mut resource: T, receiver: Arc<Mutex<Receiver<Message<T>>>>) -> Self
     where
         T: Send + 'static,
     {
         let thread_builder = Builder::new().name(format!("{}", id));
         let handle = thread_builder
             .spawn(move || {
-                let mut resource = resource;
                 loop {
                     // Explicitly drop the MutexGuard
                     let task = match receiver.lock().unwrap().recv().unwrap() {

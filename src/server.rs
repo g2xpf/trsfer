@@ -111,6 +111,7 @@ fn run_server(mut config: TrsferServerConfig<'_>) -> io::Result<()> {
 
                 let thread_builder = Builder::new().name(format!("{}", thread_id));
                 let output_path = Arc::clone(&output_path);
+
                 thread_builder
                     .spawn(
                         move || match stream_handler::handle_stream(stream, output_path) {
