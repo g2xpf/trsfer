@@ -7,8 +7,9 @@ use std::thread::Builder;
 
 use clap::ArgMatches;
 
-use super::stream_handler;
-use super::{DEFAULT_IP_ADDRESS, DEFAULT_PORT};
+use super::{Error, DEFAULT_IP_ADDRESS, DEFAULT_PORT};
+
+pub mod stream_handler;
 
 const DEFAULT_OUTPUT_PATH: &str = ".";
 
@@ -19,7 +20,7 @@ struct TrsferServerConfig<'a> {
     allow_port_fallback: bool,
 }
 
-pub fn run(matches: &ArgMatches<'_>) {
+pub fn run(matches: &ArgMatches<'_>) -> io::Result<()> {
     let (port, allow_port_fallback) = if matches.occurrences_of("port") > 0 {
         let port_arg = matches.value_of("port").unwrap();
         if let Ok(port_arg) = port_arg.parse() {
@@ -43,12 +44,7 @@ pub fn run(matches: &ArgMatches<'_>) {
             if output_path.exists() && output_path.is_dir() {
                 output_path
             } else if !output_path.exists() {
-                fs::create_dir(output_path).unwrap_or_else(|_| {
-                    panic!(
-                        "failed to create directory: `{}`",
-                        output_path.to_string_lossy()
-                    )
-                });
+                fs::create_dir(output_path)?;
                 output_path
             } else {
                 exit!(7, output_path_arg);
@@ -66,7 +62,7 @@ pub fn run(matches: &ArgMatches<'_>) {
         allow_port_fallback,
     };
 
-    run_server(config).unwrap();
+    run_server(config)
 }
 
 fn run_server(mut config: TrsferServerConfig<'_>) -> io::Result<()> {
@@ -115,13 +111,13 @@ fn run_server(mut config: TrsferServerConfig<'_>) -> io::Result<()> {
                 thread_builder
                     .spawn(
                         move || match stream_handler::handle_stream(stream, output_path) {
-                            Err(e) if e.kind() != ErrorKind::UnexpectedEof => {
+                            Err(Error::IOError(e)) if e.kind() != ErrorKind::UnexpectedEof => {
                                 log::error!("{}", e);
                             }
                             _ => {}
                         },
                     )
-                    .unwrap();
+                    .expect("failed to spawn thread");
                 thread_id += 1;
             }
             Err(e) => {

@@ -5,39 +5,61 @@ use clap::{App, AppSettings, Arg, SubCommand};
 
 use env_logger::Builder;
 
-use trsfer::{client, server, DEFAULT_IP_ADDRESS, DEFAULT_PORT};
+use trsfer::{client, server, Error, Result, DEFAULT_IP_ADDRESS, DEFAULT_PORT};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const AUTHOR: &str = env!("CARGO_PKG_AUTHORS");
 const ABOUT: &str = r#"trsfer is a command line tool that transfers files through a local network"#;
 
-fn main() {
+fn main() -> Result<()> {
     let mut builder = Builder::from_default_env();
-    builder
-        .format(|buf, record| {
-            let thread = thread::current();
-            let thread_name = thread.name().unwrap_or("");
-            let time = buf.timestamp_millis();
-            let level = record.level();
-            let level = buf.default_styled_level(level);
-            let file = record.file().unwrap_or("?");
-            let line = match record.line() {
-                Some(line) => line.to_string(),
-                None => String::from("?"),
-            };
-            let args = record.args();
-            writeln!(
-                buf,
-                "[{time} {level} [{thread_name}] {file}:{line}] {args}",
-                time = time,
-                level = level,
-                thread_name = thread_name,
-                file = file,
-                line = line,
-                args = args
-            )
-        })
-        .init();
+
+    if cfg!(debug_assertions) {
+        builder
+            .format(|buf, record| {
+                let thread = thread::current();
+                let thread_name = thread.name().unwrap_or("?");
+                let time = buf.timestamp_millis();
+                let level = record.level();
+                let level = buf.default_styled_level(level);
+                let file = record.file().unwrap_or("?");
+                let line = match record.line() {
+                    Some(line) => line.to_string(),
+                    None => String::from("?"),
+                };
+                let args = record.args();
+                writeln!(
+                    buf,
+                    "[{time} {level} ({thread_name}) {file}:{line}] {args}",
+                    time = time,
+                    level = level,
+                    thread_name = thread_name,
+                    file = file,
+                    line = line,
+                    args = args
+                )
+            })
+            .init();
+    } else {
+        builder
+            .format(|buf, record| {
+                let thread = thread::current();
+                let thread_name = thread.name().unwrap_or("?");
+                let time = buf.timestamp_millis();
+                let level = record.level();
+                let level = buf.default_styled_level(level);
+                let args = record.args();
+                writeln!(
+                    buf,
+                    "[{time} {level} ({thread_name})] {args}",
+                    time = time,
+                    level = level,
+                    thread_name = thread_name,
+                    args = args
+                )
+            })
+            .init();
+    }
 
     let default_port_str = &format!("{}", DEFAULT_PORT);
     let matches = App::new("trsfer")
@@ -78,9 +100,9 @@ fn main() {
         .get_matches();
 
     if let Some(matches) = matches.subcommand_matches("server") {
-        server(matches);
+        server(matches).map_err(Error::IOError)
     } else if let Some(matches) = matches.subcommand_matches("client") {
-        client(matches);
+        client(matches)
     } else {
         unreachable!();
     }

@@ -1,28 +1,25 @@
-use indicatif::{ProgressBar, ProgressStyle};
-use rw::BinaryRead;
-use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::fs::{self, File};
 use std::io::{self, Write};
 use std::ops::Deref;
 use std::path::{Path, PathBuf, StripPrefixError};
+use std::result;
+
+use indicatif::{ProgressBar, ProgressStyle};
+
+use rw::BinaryRead;
+
+use serde::{Deserialize, Serialize};
 
 #[macro_use]
 pub mod macros;
 
 pub mod rw;
-pub mod session;
-pub mod stream_handler;
-pub mod thread_pool;
 
 mod client;
 pub use client::run as client;
 mod server;
 pub use server::run as server;
-
-pub use session::Session;
-pub use stream_handler::handle_stream;
-pub use thread_pool::ThreadPool;
 
 pub const DEFAULT_IP_ADDRESS: &str = "127.0.0.1";
 pub const DEFAULT_PORT: u16 = 8192;
@@ -41,8 +38,17 @@ pub struct FileMetadata {
 #[repr(transparent)]
 pub struct FileContent(Vec<u8>);
 
+#[derive(Debug)]
+pub enum Error {
+    IOError(io::Error),
+    BincodeError(bincode::Error),
+    StripPrefixError(StripPrefixError),
+}
+
+pub type Result<T> = result::Result<T, Error>;
+
 impl FileContent {
-    pub fn load(path: impl AsRef<Path>, progress_bar: &ProgressBar) -> Result<Self, Error> {
+    pub fn load(path: impl AsRef<Path>, progress_bar: &ProgressBar) -> Result<Self> {
         let mut file = File::open(path).map_err(Error::IOError)?;
         let len = file.metadata().map_err(Error::IOError)?.len() as usize;
 
@@ -52,7 +58,7 @@ impl FileContent {
         Ok(FileContent(buf))
     }
 
-    pub fn save(&self, save_path: impl AsRef<Path>) -> Result<(), Error> {
+    pub fn save(&self, save_path: impl AsRef<Path>) -> Result<()> {
         let save_path = save_path.as_ref();
         if let Some(parent_path) = save_path.parent() {
             fs::create_dir_all(parent_path).map_err(Error::IOError)?;
@@ -69,13 +75,8 @@ impl Deref for FileContent {
     }
 }
 
-#[derive(Debug)]
-pub enum Error {
-    IOError(io::Error),
-}
-
 impl FileMetadata {
-    pub fn load(path: impl AsRef<Path>) -> Result<Self, Error> {
+    pub fn load(path: impl AsRef<Path>) -> Result<Self> {
         let path_buf = path.as_ref().to_owned();
         let file = File::open(path).map_err(Error::IOError)?;
         let metadata = file.metadata().map_err(Error::IOError)?;
@@ -87,14 +88,14 @@ impl FileMetadata {
         })
     }
 
-    pub fn strip_prefix(&mut self, base: impl AsRef<Path>) -> Result<(), StripPrefixError> {
+    pub fn strip_prefix(&mut self, base: impl AsRef<Path>) -> result::Result<(), StripPrefixError> {
         self.path_buf = self.path_buf.strip_prefix(base.as_ref())?.to_owned();
         Ok(())
     }
 }
 
 pub struct ChildPaths {
-    stack: VecDeque<Result<PathBuf, io::Error>>,
+    stack: VecDeque<Result<PathBuf>>,
 }
 
 impl ChildPaths {
@@ -107,7 +108,7 @@ impl ChildPaths {
 }
 
 impl Iterator for ChildPaths {
-    type Item = Result<PathBuf, io::Error>;
+    type Item = Result<PathBuf>;
 
     // TODO: lazily load file entries
     fn next(&mut self) -> Option<Self::Item> {
@@ -116,11 +117,14 @@ impl Iterator for ChildPaths {
                 if path.is_dir() {
                     match path.read_dir() {
                         Ok(read_dir) => {
-                            self.stack
-                                .extend(read_dir.into_iter().map(|e| e.map(|e| e.path())));
+                            self.stack.extend(
+                                read_dir
+                                    .into_iter()
+                                    .map(|e| e.map(|e| e.path()).map_err(Error::IOError)),
+                            );
                             self.next()
                         }
-                        Err(e) => Some(Err(e)),
+                        Err(e) => Some(Err(Error::IOError(e))),
                     }
                 } else {
                     Some(Ok(path))
@@ -158,8 +162,60 @@ mod file_entries {
     }
 }
 
-pub fn default_progress_style() -> ProgressStyle {
-    ProgressStyle::default_bar()
-        .template("{msg} [{bar:.cyan/blue}] {bytes}/{total_bytes} ({eta_precise})")
-        .progress_chars("##-")
+const DEFAULT_PROGRESS_STYLE_BEGIN: &str =
+    "[{bar:.cyan/blue}] {bytes}/{total_bytes}[{binary_bytes_per_sec}] ({eta})";
+const DEFAULT_PROGRESS_STYLE_END: &str = "{total_bytes}";
+const MESSAGE_FINISHED: &str = "[finished]";
+
+pub fn set_error_style(progress_bar: &ProgressBar, error: Error) {
+    let style = ProgressStyle::default_bar().template("{msg}");
+    progress_bar.set_style(style);
+    progress_bar.set_message(format!("{:?}", error));
+}
+
+pub fn set_send_style_begin(progress_bar: &ProgressBar) {
+    progress_bar.reset();
+    let style = ProgressStyle::default_bar()
+        .template(&format!(
+            "{{msg}} [sending] {}",
+            DEFAULT_PROGRESS_STYLE_BEGIN
+        ))
+        .progress_chars("##-");
+    progress_bar.set_style(style);
+}
+
+pub fn set_send_style_end(progress_bar: &ProgressBar) {
+    let style = ProgressStyle::default_bar()
+        .template(&format!(
+            "{{msg}} {} {}",
+            MESSAGE_FINISHED, DEFAULT_PROGRESS_STYLE_END
+        ))
+        .progress_chars("##-");
+    progress_bar.set_style(style);
+}
+
+pub fn set_load_style_begin(progress_bar: &ProgressBar) {
+    progress_bar.reset();
+    let style = ProgressStyle::default_bar()
+        .template(&format!(
+            "{{msg}} [loading] {}",
+            DEFAULT_PROGRESS_STYLE_BEGIN
+        ))
+        .progress_chars("##-");
+    progress_bar.set_style(style);
+}
+
+pub fn set_load_style_end(progress_bar: &ProgressBar) {
+    let style = ProgressStyle::default_bar()
+        .template(&format!(
+            "{{msg}} {} {}",
+            MESSAGE_FINISHED, DEFAULT_PROGRESS_STYLE_END
+        ))
+        .progress_chars("##-");
+    progress_bar.set_style(style);
+}
+
+pub fn set_skipped_style(progress_bar: &ProgressBar) {
+    let style = ProgressStyle::default_bar().template("{msg} skipped");
+    progress_bar.set_style(style);
 }

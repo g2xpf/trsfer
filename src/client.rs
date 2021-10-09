@@ -1,9 +1,13 @@
-use std::io;
 use std::{net::SocketAddr, path::Path};
 
 use clap::ArgMatches;
 
-use super::session::Session;
+use super::{Error, Result};
+
+pub mod session;
+pub mod thread_pool;
+
+use session::Session;
 
 struct TrsferClientConfig<'a> {
     addr: SocketAddr,
@@ -11,7 +15,7 @@ struct TrsferClientConfig<'a> {
     is_dry_run: bool,
 }
 
-pub fn run(matches: &ArgMatches<'_>) {
+pub fn run(matches: &ArgMatches<'_>) -> Result<()> {
     let ip = matches.value_of("ip").unwrap();
 
     let is_dry_run = matches.is_present("dry run");
@@ -34,16 +38,16 @@ pub fn run(matches: &ArgMatches<'_>) {
     };
 
     let config = TrsferClientConfig {
-        path,
         addr,
+        path,
         is_dry_run,
     };
 
-    handle_stream(&config).unwrap();
+    handle_stream(&config)
 }
 
-fn handle_stream(config: &TrsferClientConfig) -> io::Result<()> {
+fn handle_stream(config: &TrsferClientConfig) -> Result<()> {
     let num_sessions = num_cpus::get();
-    let session = Session::connect(num_sessions, config.addr)?;
+    let session = Session::connect(num_sessions, config.addr).map_err(Error::IOError)?;
     session.run_by_path(config.path, config.is_dry_run)
 }
