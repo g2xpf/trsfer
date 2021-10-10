@@ -66,10 +66,14 @@ impl Worker {
     {
         let thread_builder = Builder::new().name(format!("{}", id));
         let handle = thread_builder
-            .spawn(move || {
-                while let Message::Task(task) = receiver.lock().unwrap().recv().unwrap() {
-                    task.run(&mut resource);
-                }
+            .spawn(move || loop {
+                // NOTE: Explicitly dropping MutexGuard here for multi-threaded task executions
+                let task = if let Message::Task(task) = receiver.lock().unwrap().recv().unwrap() {
+                    task
+                } else {
+                    break;
+                };
+                task.run(&mut resource);
             })
             .unwrap();
 
