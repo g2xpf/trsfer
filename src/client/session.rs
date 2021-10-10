@@ -8,8 +8,8 @@ use super::thread_pool::ThreadPool;
 use crate::rw::{BinaryRead, BinaryWrite};
 use crate::{exit, ChildPaths, FileContent, FileMetadata, Response};
 use crate::{
-    set_error_style, set_load_style_begin, set_load_style_end, set_send_style_begin,
-    set_send_style_end, set_skipped_style, Error, Result, TrsferSetting,
+    load_style_begin, load_style_end, send_style_begin, send_style_end, set_error_style,
+    skipped_style, Error, Result, TrsferSetting,
 };
 
 use indicatif::{MultiProgress, ProgressBar, ProgressDrawTarget};
@@ -53,7 +53,8 @@ impl Session {
         for path in child_paths {
             let path = path?;
             let base_path = Arc::clone(&base_path);
-            let progress_bar = self.multi_progress.add(ProgressBar::new(!0));
+            let progress_bar = ProgressBar::new(!0).with_style(load_style_begin());
+            let progress_bar = self.multi_progress.add(progress_bar);
 
             self.thread_pool.execute(move |stream| {
                 let task = || -> Result<()> {
@@ -70,8 +71,6 @@ impl Session {
                         .map_err(Error::StripPrefixError)?;
 
                     // set progress bar message
-                    set_load_style_begin(&progress_bar);
-
                     progress_bar.set_message(file_metadata.path_buf.to_string_lossy().into_owned());
 
                     // create read/write stream
@@ -86,25 +85,29 @@ impl Session {
                     let mut buf = Vec::new();
                     let file_exists = reader.read_deserialize::<bool>(&mut buf)?;
                     if file_exists {
-                        set_skipped_style(&progress_bar);
+                        progress_bar.set_style(skipped_style());
                         progress_bar.finish_with_message(
                             file_metadata.path_buf.to_string_lossy().to_string(),
                         );
                         return Ok(());
                     }
 
+                    progress_bar.set_style(load_style_begin());
+                    progress_bar.reset();
+
                     // create raw data
                     let content = FileContent::load(&path, &progress_bar)?;
 
-                    set_load_style_end(&progress_bar);
+                    progress_bar.set_style(load_style_end());
 
-                    set_send_style_begin(&progress_bar);
+                    progress_bar.reset();
+                    progress_bar.set_style(send_style_begin());
 
                     writer
                         .write_binary_with_progress(&content, &progress_bar)
                         .map_err(Error::IOError)?;
 
-                    set_send_style_end(&progress_bar);
+                    progress_bar.set_style(send_style_end());
 
                     progress_bar
                         .finish_with_message(file_metadata.path_buf.to_string_lossy().to_string());

@@ -173,49 +173,42 @@ pub fn set_error_style(progress_bar: &ProgressBar, error: Error) {
     progress_bar.set_message(format!("{:?}", error));
 }
 
-pub fn set_send_style_begin(progress_bar: &ProgressBar) {
-    progress_bar.reset();
-    let style = ProgressStyle::default_bar()
+pub fn send_style_begin() -> ProgressStyle {
+    ProgressStyle::default_bar()
         .template(&format!(
             "{{msg}} [sending] {}",
             DEFAULT_PROGRESS_STYLE_BEGIN
         ))
-        .progress_chars("##-");
-    progress_bar.set_style(style);
+        .progress_chars("##-")
 }
 
-pub fn set_send_style_end(progress_bar: &ProgressBar) {
-    let style = ProgressStyle::default_bar()
+pub fn send_style_end() -> ProgressStyle {
+    ProgressStyle::default_bar()
         .template(&format!(
             "{{msg}} {} {}",
             MESSAGE_FINISHED, DEFAULT_PROGRESS_STYLE_END
         ))
-        .progress_chars("##-");
-    progress_bar.set_style(style);
+        .progress_chars("##-")
 }
 
-pub fn set_load_style_begin(progress_bar: &ProgressBar) {
-    progress_bar.reset();
-    let style = ProgressStyle::default_bar()
+pub fn load_style_begin() -> ProgressStyle {
+    ProgressStyle::default_bar()
         .template(&format!(
             "{{msg}} [loading] {}",
             DEFAULT_PROGRESS_STYLE_BEGIN
         ))
-        .progress_chars("##-");
-    progress_bar.set_style(style);
+        .progress_chars("##-")
 }
 
-pub fn set_load_style_end(progress_bar: &ProgressBar) {
-    let style = ProgressStyle::default_bar()
+pub fn load_style_end() -> ProgressStyle {
+    ProgressStyle::default_bar()
         .template(&format!(
             "{{msg}} {} {}",
             MESSAGE_FINISHED, DEFAULT_PROGRESS_STYLE_END
         ))
-        .progress_chars("##-");
-    progress_bar.set_style(style);
+        .progress_chars("##-")
 }
 
-pub fn set_skipped_style(progress_bar: &ProgressBar) {
-    let style = ProgressStyle::default_bar().template("{msg} skipped");
-    progress_bar.set_style(style);
+pub fn skipped_style() -> ProgressStyle {
+    ProgressStyle::default_bar().template("{msg} skipped")
 }
